@@ -11,7 +11,7 @@ import type {
 import type {} from 'pinia-plugin-synced'
 
 import type { ProviderMetadata, ProviderValidationPlan } from '../../libs/providers'
-import type { ChatRequestOptions, ModelInfo, ProviderDefinition, ProviderInstance, VoiceInfo } from '../../libs/providers/types'
+import type { ChatRequestOptions, ModelInfo, ProviderDefinition, ProviderInstance, ProviderVoiceCreateInput, VoiceInfo } from '../../libs/providers/types'
 
 import { errorMessageFrom } from '@moeru/std'
 import { isCustomProvidersDisabled } from '@proj-airi/stage-shared'
@@ -35,7 +35,7 @@ import { useAuthStore } from '../auth'
 import { useProviderConfigStore } from './config'
 import { normalizeProviderConfigDefaults } from './config-defaults'
 
-export type { ModelInfo, VoiceInfo } from '../../libs/providers/types'
+export type { ModelInfo, ProviderVoiceCreateInput, VoiceInfo } from '../../libs/providers/types'
 
 /** Serializable request and model-discovery state for one provider instance. */
 export interface ProviderRuntimeState {
@@ -581,6 +581,38 @@ export const useProviderStore = defineStore('provider', () => {
     })
   }
 
+  async function createProviderVoice(providerId: string, input: ProviderVoiceCreateInput) {
+    const definition = getProviderDefinition(providerId)
+    const createVoice = definition.extraMethods?.createVoice
+    if (!createVoice)
+      return undefined
+
+    const config = providerConfigStore.getProviderConfig(providerId) ?? {}
+    const provider = await definition.createProvider(config)
+    try {
+      return await createVoice(config, provider, input)
+    }
+    finally {
+      await disposeTemporaryProvider(provider)
+    }
+  }
+
+  async function deleteProviderVoice(providerId: string, voiceId: string) {
+    const definition = getProviderDefinition(providerId)
+    const deleteVoice = definition.extraMethods?.deleteVoice
+    if (!deleteVoice)
+      return
+
+    const config = providerConfigStore.getProviderConfig(providerId) ?? {}
+    const provider = await definition.createProvider(config)
+    try {
+      await deleteVoice(config, provider, voiceId)
+    }
+    finally {
+      await disposeTemporaryProvider(provider)
+    }
+  }
+
   async function loadProviderModel(
     providerId: string,
     config: Record<string, unknown>,
@@ -987,6 +1019,8 @@ export const useProviderStore = defineStore('provider', () => {
     fetchModelsForProvider,
     getModelsForProvider,
     listProviderVoices,
+    createProviderVoice,
+    deleteProviderVoice,
     loadProviderModel,
     loadModelsForConfiguredProviders,
     getProviderInstance,

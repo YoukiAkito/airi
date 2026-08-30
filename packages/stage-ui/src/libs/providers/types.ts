@@ -82,7 +82,24 @@ export interface ProviderExtraMethods<TConfig> {
    * narrow the result. Providers with a single catalogue ignore it.
    */
   listVoices?: (config: TConfig, provider: ProviderInstance, model?: string) => Promise<VoiceInfo[]>
+  /**
+   * Creates a custom voice (e.g. uploading a reference audio) on providers that
+   * persist named voices server-side (IndexTTS-2/2.5 vLLM-Omni voice storage).
+   */
+  createVoice?: (config: TConfig, provider: ProviderInstance, input: ProviderVoiceCreateInput) => Promise<VoiceInfo>
+  /** Deletes a previously created custom voice by id. */
+  deleteVoice?: (config: TConfig, provider: ProviderInstance, voiceId: string) => Promise<void>
   loadModel?: (config: TConfig, provider: ProviderInstance, hooks?: { onProgress?: (progress: ProgressInfo) => Promise<void> | void }) => Promise<void>
+}
+
+/**
+ * Input for creating a custom voice via `ProviderExtraMethods.createVoice`.
+ */
+export interface ProviderVoiceCreateInput {
+  file: File | Blob
+  name?: string
+  speakerDescription?: string
+  consent?: boolean
 }
 
 export interface ProviderValidationResult {

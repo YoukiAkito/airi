@@ -1,7 +1,7 @@
 import type { SpeechProviderWithExtraOptions } from '@xsai-ext/providers/utils'
 import type {} from 'pinia-plugin-synced'
 
-import type { VoiceInfo } from '../providers/provider'
+import type { ProviderVoiceCreateInput, VoiceInfo } from '../providers/provider'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
@@ -148,6 +148,33 @@ export const useSpeechStore = defineStore('speech', () => {
   // Get voices for a specific provider
   function getVoicesForProvider(provider: string) {
     return availableVoices.value[provider] || []
+  }
+
+  /**
+   * Creates a custom voice (e.g. uploading a reference audio) through the
+   * provider's `createVoice` extra method and appends it to the cached list.
+   */
+  async function createVoiceForProvider(providerId: string, input: ProviderVoiceCreateInput): Promise<VoiceInfo | undefined> {
+    const created = await providersStore.createProviderVoice(providerId, input)
+    if (created) {
+      availableVoices.value = {
+        ...availableVoices.value,
+        [providerId]: [...(availableVoices.value[providerId] ?? []), created],
+      }
+    }
+    return created
+  }
+
+  /**
+   * Deletes a custom voice through the provider's `deleteVoice` extra method
+   * and removes it from the cached list.
+   */
+  async function deleteVoiceForProvider(providerId: string, voiceId: string): Promise<void> {
+    await providersStore.deleteProviderVoice(providerId, voiceId)
+    availableVoices.value = {
+      ...availableVoices.value,
+      [providerId]: (availableVoices.value[providerId] ?? []).filter(voice => voice.id !== voiceId),
+    }
   }
 
   function clearVoiceSelection() {
@@ -449,6 +476,8 @@ export const useSpeechStore = defineStore('speech', () => {
     speech,
     loadVoicesForProvider,
     getVoicesForProvider,
+    createVoiceForProvider,
+    deleteVoiceForProvider,
     ensureStreamingDefaultModel,
     ensureActiveSpeechModel,
     generateSSML,
