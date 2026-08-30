@@ -1263,6 +1263,8 @@ pages:
         model:
           label: Model
           description: Select the IndexTTS model version. IndexTTS-2 / 2.5 use the vLLM-Omni OpenAI-compatible endpoint.
+          discovered_label: '検出されたモデル:'
+          base_url_kept_notice: Base URL が選択したモデルバージョンと一致しません。元の値を保持しました。リクエストが失敗する場合は更新してください。
         model_deprecated_notice: This model version is deprecated. Consider switching to IndexTeam/IndexTTS-2.5.
         voice:
           upload:

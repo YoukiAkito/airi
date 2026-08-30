@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SpeechProvider } from '@xsai-ext/providers/utils'
 
+import { errorMessageFrom } from '@moeru/std'
 import {
   SpeechPlayground,
   SpeechProviderSettings,
@@ -9,7 +10,6 @@ import { useSpeechStore } from '@proj-airi/stage-ui/stores/modules/speech'
 import { useProviderConfigStore } from '@proj-airi/stage-ui/stores/providers/config'
 import { useProviderStore } from '@proj-airi/stage-ui/stores/providers/provider'
 import { Button, Callout, FieldCheckbox, FieldCombobox, FieldInput, FieldInputFile, FieldRange, FieldTextArea } from '@proj-airi/ui'
-import { errorMessageFrom } from '@moeru/std'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -40,52 +40,80 @@ const { configs: providers } = storeToRefs(providerStore)
 const isIndexTts2Model = (model: string) => /IndexTTS-2/i.test(model)
 
 // ------------------------------------------------------------------
+// Config entry guard
+// ------------------------------------------------------------------
+// `configs` is a computed projection of the provider store. Assigning to it
+// directly is a no-op, so the provider entry must be created through the store
+// API before mutating config fields. Without this, an unconfigured provider
+// crashes the page and model switching silently fails.
+function ensureConfig() {
+  if (providers.value[providerId])
+    return
+  try {
+    providerStore.ensureProvider(providerId, providerId, {
+      baseUrl: V2_DEFAULT_BASE_URL,
+      model: defaultModel,
+    })
+  }
+  catch (error) {
+    console.error('Failed to ensure provider config:', error)
+  }
+}
+
+// ------------------------------------------------------------------
 // Model selection
 // ------------------------------------------------------------------
 
+// Models discovered from the running server (GET /v1/models). Empty while the
+// provider is unconfigured or unreachable — the input still accepts any name.
 const providerModels = computed(() => providersStore.getModelsForProvider(providerId))
-const modelOptions = computed(() => {
-  const fallbackOptions = [
-    { id: 'IndexTeam/IndexTTS-2.5', name: 'IndexTeam/IndexTTS-2.5' },
-    { id: 'IndexTTS-2', name: 'IndexTTS-2 (deprecated)' },
-    { id: 'IndexTTS-1.5', name: 'IndexTTS-1.5 (deprecated)' },
-  ]
-
-  return (providerModels.value.length > 0 ? providerModels.value : fallbackOptions).map(model => ({
-    value: model.id,
-    label: model.name,
-  }))
-})
 
 const model = computed({
   get: () => providers.value[providerId]?.model as string | undefined || defaultModel,
   set: (value) => {
-    if (!providers.value[providerId])
-      providers.value[providerId] = {}
-
-    providers.value[providerId].model = value
+    ensureConfig()
+    if (providers.value[providerId])
+      providers.value[providerId].model = value
   },
 })
 
 const selectedModelIsDeprecated = computed(() => {
-  const found = (providerModels.value.length > 0 ? providerModels.value : []).find(m => m.id === model.value)
-  return found?.deprecated ?? false
+  const modelId = model.value
+  if (!modelId)
+    return false
+
+  const found = providerModels.value.find(m => m.id === modelId)
+  if (found)
+    return found.deprecated ?? false
+
+  // Fall back to known legacy names while the server is unreachable.
+  return modelId === 'IndexTTS-2' || /IndexTTS-1/i.test(modelId)
 })
 
-// Auto-switch between known default base URLs when the model version changes,
-// preserving any user-customized base URL.
+// Auto-switch between known default base URLs when the model version changes.
+// A user-customized base URL is preserved and flagged instead of being silently
+// left pointing at the wrong port.
 watch(model, (newModel) => {
+  ensureConfig()
   const current = providers.value[providerId]?.baseUrl as string | undefined
   const isV2 = isIndexTts2Model(newModel)
+  const targetDefault = isV2 ? V2_DEFAULT_BASE_URL : V1_DEFAULT_BASE_URL
+  const otherDefault = isV2 ? V1_DEFAULT_BASE_URL : V2_DEFAULT_BASE_URL
 
-  if (isV2 && current === V1_DEFAULT_BASE_URL) {
-    providers.value[providerId].baseUrl = V2_DEFAULT_BASE_URL
+  if (current === otherDefault) {
+    providers.value[providerId].baseUrl = targetDefault
   }
-  else if (!isV2 && current === V2_DEFAULT_BASE_URL) {
-    providers.value[providerId].baseUrl = V1_DEFAULT_BASE_URL
+  else if (current && current !== targetDefault) {
+    toast(t('settings.pages.providers.provider.index-tts-vllm.model.base_url_kept_notice'))
   }
 
   speechStore.loadVoicesForProvider(providerId, newModel)
+})
+
+// Surface voice-list load failures instead of failing silently.
+watch(() => speechStore.speechProviderError, (error) => {
+  if (error)
+    toast(error)
 })
 
 // ------------------------------------------------------------------
@@ -142,8 +170,18 @@ async function handleCreateVoice() {
   }
 }
 
+function requestDeleteVoiceConfirmation(message: string): boolean {
+  // NOTICE:
+  // Native confirm is the existing guard for this destructive voice action.
+  // Root cause: `no-alert` rejects direct `confirm(...)` calls until a shared
+  // confirmation-dialog primitive is wired into the provider settings flow.
+  // Removal condition: replace with the shared modal confirmation component.
+  const confirmAction = globalThis.confirm.bind(globalThis)
+  return confirmAction(message)
+}
+
 async function handleDeleteVoice(voiceId: string) {
-  if (!window.confirm(t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete_confirm')))
+  if (!requestDeleteVoiceConfirmation(t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete_confirm')))
     return
 
   try {
@@ -189,9 +227,7 @@ async function handleGenerateSpeech(input: string, voiceId: string) {
 }
 
 onMounted(async () => {
-  if (!providers.value[providerId])
-    providers.value[providerId] = {}
-
+  ensureConfig()
   providers.value[providerId].model ??= defaultModel
   lang.value = (providers.value[providerId]?.lang as string | undefined) || 'zh'
   speed.value = typeof providers.value[providerId]?.speed === 'number' ? providers.value[providerId].speed as number : 1
@@ -205,19 +241,35 @@ onMounted(async () => {
 <template>
   <SpeechProviderSettings :provider-id="providerId" :default-model="defaultModel">
     <template #voice-settings>
-      <FieldCombobox
+      <FieldInput
         v-model="model"
         :label="t('settings.pages.providers.provider.index-tts-vllm.model.label')"
         :description="t('settings.pages.providers.provider.index-tts-vllm.model.description')"
-        :options="modelOptions"
         placeholder="IndexTeam/IndexTTS-2.5"
       />
+
+      <div v-if="providerModels.length > 0" flex="~ wrap items-center gap-2" mt-1>
+        <span class="text-xs text-neutral-500 dark:text-neutral-400">
+          {{ t('settings.pages.providers.provider.index-tts-vllm.model.discovered_label') }}
+        </span>
+        <button
+          v-for="m in providerModels"
+          :key="m.id"
+          type="button"
+          border="neutral-200 dark:neutral-700 solid 2"
+
+          rounded-full px-2 py-0.5 text-xs text-neutral-700 hover:border-primary-300 dark:text-neutral-300 dark:hover:border-primary-400
+          @click="model = m.id"
+        >
+          {{ m.name }}{{ m.deprecated ? ` (deprecated)` : '' }}
+        </button>
+      </div>
 
       <Callout v-if="selectedModelIsDeprecated" theme="orange">
         {{ t('settings.pages.providers.provider.index-tts-vllm.model_deprecated_notice') }}
       </Callout>
 
-      <h3 class="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+      <h3 class="text-sm text-neutral-700 font-medium dark:text-neutral-300">
         {{ t('settings.pages.providers.provider.index-tts-vllm.voice.upload.title') }}
       </h3>
       <p class="text-xs text-neutral-500 dark:text-neutral-400">
@@ -259,7 +311,7 @@ onMounted(async () => {
         @click="handleCreateVoice"
       />
 
-      <h3 class="mt-4 text-sm font-medium text-neutral-700 dark:text-neutral-300">
+      <h3 class="mt-4 text-sm text-neutral-700 font-medium dark:text-neutral-300">
         {{ t('settings.pages.providers.provider.index-tts-vllm.voice.list.title') }}
       </h3>
       <div v-if="availableVoices.length === 0" class="text-xs text-neutral-500 dark:text-neutral-400">

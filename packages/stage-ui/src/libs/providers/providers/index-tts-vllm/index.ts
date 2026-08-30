@@ -1,6 +1,6 @@
 import type { CommonRequestOptions } from '@xsai/shared'
 
-import type { ProviderVoiceCreateInput, VoiceInfo } from '../../types'
+import type { ModelInfo, ProviderVoiceCreateInput, VoiceInfo } from '../../types'
 
 import { errorMessageFrom } from '@moeru/std'
 import { z } from 'zod'
@@ -14,6 +14,40 @@ const V1_DEFAULT_BASE_URL = 'http://localhost:11996/tts/'
 const V2_DEFAULT_BASE_URL = 'http://localhost:8092/v1/'
 
 const DEFAULT_MODEL = 'IndexTeam/IndexTTS-2.5'
+
+/**
+ * Known deployment names, used only when the running server cannot be probed.
+ * IndexTTS-1.x custom servers expose no model listing; vLLM-Omni serves an
+ * OpenAI-compatible `GET /v1/models`, so live discovery is preferred.
+ */
+const FALLBACK_MODELS: ModelInfo[] = [
+  {
+    id: 'IndexTeam/IndexTTS-2.5',
+    name: 'IndexTeam/IndexTTS-2.5',
+    provider: 'index-tts-vllm',
+    description: 'Default model for IndexTTS-2.5 vLLM-Omni deployment',
+    contextLength: 0,
+    deprecated: false,
+  },
+  {
+    id: 'IndexTTS-2',
+    name: 'IndexTTS-2',
+    provider: 'index-tts-vllm',
+    description: 'IndexTTS-2 via vLLM-Omni',
+    contextLength: 0,
+    deprecated: true,
+  },
+  {
+    id: 'IndexTTS-1.5',
+    name: 'IndexTTS-1.5',
+    provider: 'index-tts-vllm',
+    description: 'Legacy IndexTTS-1.5 custom server',
+    contextLength: 0,
+    deprecated: true,
+  },
+]
+
+const MODEL_PROBE_TIMEOUT_MS = 3000
 
 const indexTtsConfigSchema = z.object({
   baseUrl: z.string().default(V2_DEFAULT_BASE_URL),
@@ -158,32 +192,39 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
     ],
   },
   extraMethods: {
-    listModels: async () => [
-      {
-        id: 'IndexTeam/IndexTTS-2.5',
-        name: 'IndexTeam/IndexTTS-2.5',
-        provider: 'index-tts-vllm',
-        description: 'Default model for IndexTTS-2.5 vLLM-Omni deployment',
-        contextLength: 0,
-        deprecated: false,
-      },
-      {
-        id: 'IndexTTS-2',
-        name: 'IndexTTS-2',
-        provider: 'index-tts-vllm',
-        description: 'IndexTTS-2 via vLLM-Omni',
-        contextLength: 0,
-        deprecated: true,
-      },
-      {
-        id: 'IndexTTS-1.5',
-        name: 'IndexTTS-1.5',
-        provider: 'index-tts-vllm',
-        description: 'Legacy IndexTTS-1.5 custom server',
-        contextLength: 0,
-        deprecated: true,
-      },
-    ],
+    listModels: async (config) => {
+      // Prefer live discovery: vLLM-Omni exposes an OpenAI-compatible
+      // `GET /v1/models`. A custom `--served-model-name` shows up there, which
+      // the hard-coded catalogue cannot cover. IndexTTS-1.x custom servers do
+      // not implement it and fall back to the known catalogue.
+      const baseUrl = resolveBaseUrl(config, config.model)
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), MODEL_PROBE_TIMEOUT_MS)
+        const response = await fetch(`${baseUrl}models`, { signal: controller.signal })
+        clearTimeout(timeout)
+
+        if (response.ok) {
+          const payload = await response.json() as { data?: Array<{ id?: string }> }
+          const discovered = (payload.data ?? [])
+            .filter((model): model is { id: string } => typeof model.id === 'string' && model.id !== '')
+            .map(model => ({
+              id: model.id,
+              name: model.id,
+              provider: 'index-tts-vllm' as const,
+              contextLength: 0,
+              deprecated: model.id === 'IndexTTS-2' || /IndexTTS-1/i.test(model.id),
+            }))
+          if (discovered.length > 0)
+            return discovered
+        }
+      }
+      catch {
+        // unreachable server or probe timeout: fall through to the catalogue
+      }
+
+      return FALLBACK_MODELS
+    },
     listVoices: async (config, _provider, model) => {
       const response = await fetch(voicesUrl(config, model ?? config.model))
       if (!response.ok)

@@ -186,13 +186,50 @@ describe('index-tts-vllm provider definition', () => {
   })
 
   describe('extraMethods.listModels', () => {
-    it('exposes 2.5 as default and marks legacy versions deprecated', async () => {
-      const models = await providerIndexTtsVllm.extraMethods!.listModels!({} as never, null as never)
+    it('discovers models from GET /v1/models', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({
+        data: [
+          { id: 'IndexTeam/IndexTTS-2.5' },
+          { id: 'my-custom-tts' },
+          { id: 'IndexTTS-2' },
+        ],
+      }))
+
+      const models = await providerIndexTtsVllm.extraMethods!.listModels!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+      )
+
+      expect(models.map(m => m.id)).toEqual(['IndexTeam/IndexTTS-2.5', 'my-custom-tts', 'IndexTTS-2'])
+      expect(models[0].deprecated).toBe(false)
+      expect(models[1].deprecated).toBe(false)
+      expect(models[2].deprecated).toBe(true)
+      expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8092/v1/models')
+    })
+
+    it('falls back to the known catalogue when the server is unreachable', async () => {
+      fetchMock.mockRejectedValue(new TypeError('network down'))
+
+      const models = await providerIndexTtsVllm.extraMethods!.listModels!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+      )
 
       expect(models.map(m => m.id)).toEqual(['IndexTeam/IndexTTS-2.5', 'IndexTTS-2', 'IndexTTS-1.5'])
       expect(models[0].deprecated).toBe(false)
       expect(models[1].deprecated).toBe(true)
       expect(models[2].deprecated).toBe(true)
+    })
+
+    it('falls back when the response carries no model data', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ data: [] }))
+
+      const models = await providerIndexTtsVllm.extraMethods!.listModels!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+      )
+
+      expect(models).toHaveLength(3)
     })
   })
 

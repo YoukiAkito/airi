@@ -1263,6 +1263,8 @@ pages:
         model:
           label: 模型
           description: 選擇 IndexTTS 模型版本。IndexTTS-2 / 2.5 使用 vLLM-Omni 的 OpenAI 相容端點。
+          discovered_label: '已發現的模型：'
+          base_url_kept_notice: 目前 Base URL 與所選模型版本不符，已保留原值；若請求失敗請手動更新。
         model_deprecated_notice: 此模型版本已棄用，建議切換到 IndexTeam/IndexTTS-2.5。
         voice:
           upload:

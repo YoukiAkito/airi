@@ -1430,6 +1430,8 @@ pages:
         model:
           label: Model
           description: Select the IndexTTS model version. IndexTTS-2 / 2.5 use the vLLM-Omni OpenAI-compatible endpoint.
+          discovered_label: 'Discovered models:'
+          base_url_kept_notice: The base URL does not match the selected model version. It was kept as-is — update it if requests fail.
         model_deprecated_notice: This model version is deprecated. Consider switching to IndexTeam/IndexTTS-2.5.
         voice:
           upload:
