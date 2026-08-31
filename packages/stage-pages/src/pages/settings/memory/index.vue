@@ -170,7 +170,7 @@ function toggleExpand(id: string) {
           @click="showAddDialog = true"
         />
         <Button
-          variant="ghost"
+          variant="secondary"
           icon="i-solar:refresh-bold-duotone"
           size="sm"
           :loading="alaya.isLoading"
@@ -190,7 +190,7 @@ function toggleExpand(id: string) {
         </span>
         <div flex-1 />
         <Button
-          variant="ghost"
+          variant="secondary"
           size="sm"
           :label="t('settings.pages.memory.runHousekeeping')"
           @click="alaya.runHousekeeping()"
@@ -279,7 +279,7 @@ function toggleExpand(id: string) {
             <!-- Actions -->
             <div flex="~" flex-shrink-0 items-center gap-1 @click.stop>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="sm"
                 icon="i-solar:trash-bin-trash-bold-duotone"
                 @click="confirmDeleteId = result.entry.id"
@@ -391,7 +391,7 @@ function toggleExpand(id: string) {
             @click="confirmDeleteId = null"
           />
           <Button
-            variant="danger"
+            variant="secondary"
             :label="t('settings.pages.memory.delete')"
             @click="confirmDelete()"
           />
