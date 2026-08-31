@@ -125,7 +125,9 @@ vi.mock('../composables/use-io-tracer', () => ({
 }))
 
 vi.mock('./chat/context-providers', () => ({
+  createAlayaMemoryContext: () => null,
   createMinecraftContext: () => createMinecraftContextMock(),
+  registerAlayaAutoIngestion: () => () => {},
 }))
 
 vi.mock('./chat/context-store', () => ({
