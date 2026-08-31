@@ -16,6 +16,13 @@ import { createAlayaMemory, ShortTermMemory } from '../../database/repos/alaya'
 const SHORT_TERM_BUFFER_MAX_TURNS = 20
 
 /**
+ * Relevance prefetch budget. `prepareContext()` runs on the chat send path,
+ * so a hung IndexedDB query must degrade within this window instead of
+ * blocking the outgoing message.
+ */
+const PREPARE_CONTEXT_TIMEOUT_MS = 800
+
+/**
  * Short-term buffer configuration.
  *
  * Shared by the lazy initializer and `connect()` so that rebuilding the
@@ -376,7 +383,12 @@ export const useAlayaMemoryStore = defineStore('alaya-memory', () => {
       if (trimmed)
         q.text = trimmed
 
-      const results = await d.query(q)
+      // A hung IndexedDB query must never block the chat send path. Race the
+      // relevance search against a short timeout and degrade on expiry.
+      const results = await Promise.race([
+        d.query(q),
+        new Promise<null>(resolve => setTimeout(resolve, PREPARE_CONTEXT_TIMEOUT_MS, null)),
+      ])
 
       if (requestId === latestPrepareRequestId)
         preparedMemories.value = results

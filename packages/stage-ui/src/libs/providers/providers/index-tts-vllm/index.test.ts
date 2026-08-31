@@ -64,17 +64,6 @@ describe('index-tts-vllm provider definition', () => {
       })
     })
 
-    it('keeps v1 request minimal without v2 fields', async () => {
-      const provider = await speechProvider({ baseUrl: '', model: 'IndexTTS-1.5' })
-
-      const opts = provider.speech('IndexTTS-1.5', { lang: 'zh' })
-
-      expect(opts.baseURL).toBe('http://localhost:11996/tts/')
-      expect(opts.response_format).toBeUndefined()
-      expect(opts.speed).toBeUndefined()
-      expect(opts.extra_params).toBeUndefined()
-    })
-
     it('prefers explicit baseUrl from config', async () => {
       const provider = await speechProvider({
         baseUrl: 'http://10.0.0.8:8092/v1/',
@@ -94,24 +83,11 @@ describe('index-tts-vllm provider definition', () => {
       const voices = await providerIndexTtsVllm.extraMethods!.listVoices!(
         { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
         null as never,
-        'IndexTeam/IndexTTS-2.5',
       )
 
       expect(voices).toHaveLength(2)
       expect(voices[0]).toMatchObject({ id: 'demo_voice', provider: 'index-tts-vllm' })
       expect(fetchMock).toHaveBeenCalledWith('http://localhost:8092/v1/audio/voices')
-    })
-
-    it('parses the IndexTTS-1.x object payload', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ speaker_a: {}, speaker_b: {} }))
-
-      const voices = await providerIndexTtsVllm.extraMethods!.listVoices!(
-        { baseUrl: '', model: 'IndexTTS-1.5' } as never,
-        null as never,
-      )
-
-      expect(voices.map(v => v.id)).toEqual(['speaker_a', 'speaker_b'])
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:11996/tts/audio/voices')
     })
 
     it('throws on non-ok response', async () => {
@@ -121,67 +97,6 @@ describe('index-tts-vllm provider definition', () => {
         { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
         null as never,
       )).rejects.toThrow('Failed to fetch voices')
-    })
-  })
-
-  describe('extraMethods.createVoice / deleteVoice', () => {
-    it('posts a multipart form without Authorization header', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({}))
-
-      const file = new File(['audio-bytes'], 'my_voice.wav', { type: 'audio/wav' })
-      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
-        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
-        null as never,
-        { file, name: 'my_voice', speakerDescription: 'demo voice', consent: true },
-      )
-
-      expect(created).toMatchObject({ id: 'my_voice', name: 'my_voice' })
-
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-      expect(url).toBe('http://localhost:8092/v1/audio/voices')
-      expect(init.method).toBe('POST')
-      expect(new Headers(init.headers).get('Authorization')).toBeNull()
-
-      const form = init.body as FormData
-      const entries: Record<string, unknown> = {}
-      form.forEach((value, key) => {
-        entries[key] = value
-      })
-      expect(entries.audio_sample).toBe(file)
-      expect(entries.consent).toBe('true')
-      expect(entries.name).toBe('my_voice')
-      expect(entries.speaker_description).toBe('demo voice')
-    })
-
-    it('defaults name from the file name and sends consent false', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({}))
-
-      const file = new File(['audio-bytes'], 'speaker_a.wav', { type: 'audio/wav' })
-      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
-        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
-        null as never,
-        { file, consent: false },
-      )
-
-      expect(created.id).toBe('speaker_a')
-
-      const form = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData
-      expect(form.get('name')).toBe('speaker_a')
-      expect(form.get('consent')).toBe('false')
-    })
-
-    it('deletes with an encoded voice id', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({}))
-
-      await providerIndexTtsVllm.extraMethods!.deleteVoice!(
-        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
-        null as never,
-        'my voice/中日',
-      )
-
-      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-      expect(url).toBe(`http://localhost:8092/v1/audio/voices/${encodeURIComponent('my voice/中日')}`)
-      expect(init.method).toBe('DELETE')
     })
   })
 
@@ -201,13 +116,11 @@ describe('index-tts-vllm provider definition', () => {
       )
 
       expect(models.map(m => m.id)).toEqual(['IndexTeam/IndexTTS-2.5', 'my-custom-tts', 'IndexTTS-2'])
-      expect(models[0].deprecated).toBe(false)
-      expect(models[1].deprecated).toBe(false)
-      expect(models[2].deprecated).toBe(true)
+      expect(models.every(m => m.deprecated === false)).toBe(true)
       expect(fetchMock.mock.calls[0][0]).toBe('http://localhost:8092/v1/models')
     })
 
-    it('falls back to the known catalogue when the server is unreachable', async () => {
+    it('falls back to the default 2.5 model name when the server is unreachable', async () => {
       fetchMock.mockRejectedValue(new TypeError('network down'))
 
       const models = await providerIndexTtsVllm.extraMethods!.listModels!(
@@ -215,10 +128,8 @@ describe('index-tts-vllm provider definition', () => {
         null as never,
       )
 
-      expect(models.map(m => m.id)).toEqual(['IndexTeam/IndexTTS-2.5', 'IndexTTS-2', 'IndexTTS-1.5'])
+      expect(models.map(m => m.id)).toEqual(['IndexTeam/IndexTTS-2.5'])
       expect(models[0].deprecated).toBe(false)
-      expect(models[1].deprecated).toBe(true)
-      expect(models[2].deprecated).toBe(true)
     })
 
     it('falls back when the response carries no model data', async () => {
@@ -229,7 +140,8 @@ describe('index-tts-vllm provider definition', () => {
         null as never,
       )
 
-      expect(models).toHaveLength(3)
+      expect(models).toHaveLength(1)
+      expect(models[0].id).toBe('IndexTeam/IndexTTS-2.5')
     })
   })
 
