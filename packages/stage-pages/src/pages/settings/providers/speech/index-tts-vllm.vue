@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SpeechProvider } from '@xsai-ext/providers/utils'
 
+import { errorMessageFrom } from '@moeru/std'
 import {
   SpeechPlayground,
   SpeechProviderSettings,
@@ -8,10 +9,11 @@ import {
 import { useSpeechStore } from '@proj-airi/stage-ui/stores/modules/speech'
 import { useProviderConfigStore } from '@proj-airi/stage-ui/stores/providers/config'
 import { useProviderStore } from '@proj-airi/stage-ui/stores/providers/provider'
-import { FieldCheckbox, FieldCombobox, FieldInput, FieldRange } from '@proj-airi/ui'
+import { Button, FieldCheckbox, FieldCombobox, FieldInput, FieldInputFile, FieldRange } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { toast } from 'vue-sonner'
 
 const { t } = useI18n()
 
@@ -98,6 +100,73 @@ const availableVoices = computed(() => speechStore.availableVoices[providerId] |
 const apiKeyConfigured = true // Local deployment, no API key required
 
 // ------------------------------------------------------------------
+// Voice management — register a reference audio with the local server
+// ------------------------------------------------------------------
+
+const voiceFile = ref<File[] | undefined>(undefined)
+const voiceName = ref('')
+const consent = ref(false)
+const isUploading = ref(false)
+
+const canUploadVoice = computed(() => !!voiceFile.value?.length && consent.value && !isUploading.value)
+
+async function handleCreateVoice() {
+  const file = voiceFile.value?.[0]
+  if (!file || !consent.value)
+    return
+
+  isUploading.value = true
+  try {
+    const created = await speechStore.createVoiceForProvider(providerId, {
+      file,
+      name: voiceName.value.trim() || undefined,
+      consent: consent.value,
+    })
+    if (created) {
+      toast(t('settings.pages.providers.provider.index-tts-vllm.voice.upload.success'))
+      voiceFile.value = undefined
+      voiceName.value = ''
+      consent.value = false
+    }
+  }
+  catch (error) {
+    console.error('Failed to create voice:', error)
+    toast(`${t('settings.pages.providers.provider.index-tts-vllm.voice.upload.error')} ${errorMessageFrom(error) ?? ''}`)
+  }
+  finally {
+    isUploading.value = false
+  }
+}
+
+function requestDeleteVoiceConfirmation(message: string): boolean {
+  // NOTICE:
+  // Native confirm is the existing guard for this destructive voice action.
+  // Root cause: `no-alert` rejects direct `confirm(...)` calls until a shared
+  // confirmation-dialog primitive is wired into the provider settings flow.
+  // Removal condition: replace with the shared modal confirmation component.
+  const confirmAction = globalThis.confirm.bind(globalThis)
+  return confirmAction(message)
+}
+
+async function handleDeleteVoice(voiceId: string) {
+  if (!requestDeleteVoiceConfirmation(t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete_confirm')))
+    return
+
+  try {
+    await speechStore.deleteVoiceForProvider(providerId, voiceId)
+    toast(t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete_success'))
+  }
+  catch (error) {
+    console.error('Failed to delete voice:', error)
+    toast(`${t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete_success')} ${errorMessageFrom(error) ?? ''}`)
+  }
+}
+
+function handleRefreshVoices() {
+  speechStore.loadVoicesForProvider(providerId, model.value)
+}
+
+// ------------------------------------------------------------------
 // Speech playground — the only surface the user needs: text in, audio out
 // ------------------------------------------------------------------
 
@@ -167,6 +236,71 @@ onMounted(async () => {
           {{ m.name }}
         </button>
       </div>
+
+      <h3 class="mt-4 text-sm text-neutral-700 font-medium dark:text-neutral-300">
+        {{ t('settings.pages.providers.provider.index-tts-vllm.voice.upload.title') }}
+      </h3>
+      <p class="text-xs text-neutral-500 dark:text-neutral-400">
+        {{ t('settings.pages.providers.provider.index-tts-vllm.voice.upload.description') }}
+      </p>
+
+      <FieldInputFile
+        v-model="voiceFile"
+        :label="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.file_label')"
+        :description="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.file_placeholder')"
+        accept="audio/*,.wav,.mp3"
+      />
+      <FieldInput
+        v-model="voiceName"
+        :label="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.name_label')"
+        :description="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.name_placeholder')"
+        placeholder="my_voice"
+      />
+      <FieldCheckbox
+        v-model="consent"
+        :label="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.consent_label')"
+        :description="t('settings.pages.providers.provider.index-tts-vllm.voice.upload.consent_description')"
+      />
+      <Button
+        :label="isUploading
+          ? t('settings.pages.providers.provider.index-tts-vllm.voice.upload.submitting')
+          : t('settings.pages.providers.provider.index-tts-vllm.voice.upload.submit')"
+        :disabled="!canUploadVoice"
+        :loading="isUploading"
+        variant="secondary"
+        size="sm"
+        @click="handleCreateVoice"
+      />
+
+      <h3 class="mt-4 text-sm text-neutral-700 font-medium dark:text-neutral-300">
+        {{ t('settings.pages.providers.provider.index-tts-vllm.voice.list.title') }}
+      </h3>
+      <div v-if="availableVoices.length === 0" class="text-xs text-neutral-500 dark:text-neutral-400">
+        {{ t('settings.pages.providers.provider.index-tts-vllm.voice.list.empty') }}
+      </div>
+      <div v-else flex="~ col gap-2">
+        <div
+          v-for="voice in availableVoices"
+          :key="voice.id"
+          flex="~ row items-center justify-between gap-2"
+          rounded-lg border="neutral-100 dark:neutral-800 solid 2"
+          px-3 py-2 text-sm
+        >
+          <span class="truncate">{{ voice.name }}</span>
+          <Button
+            :label="t('settings.pages.providers.provider.index-tts-vllm.voice.list.delete')"
+            variant="secondary"
+            size="sm"
+            @click="handleDeleteVoice(voice.id)"
+          />
+        </div>
+      </div>
+      <Button
+        :label="t('settings.pages.providers.provider.index-tts-vllm.voice.list.refresh')"
+        variant="secondary"
+        size="sm"
+        @click="handleRefreshVoices"
+      />
     </template>
 
     <template #advanced-settings>

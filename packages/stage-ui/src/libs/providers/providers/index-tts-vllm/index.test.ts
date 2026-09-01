@@ -118,6 +118,67 @@ describe('index-tts-vllm provider definition', () => {
     })
   })
 
+  describe('extraMethods.createVoice / deleteVoice', () => {
+    it('posts a multipart form without Authorization header', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}))
+
+      const file = new File(['audio-bytes'], 'my_voice.wav', { type: 'audio/wav' })
+      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        { file, name: 'my_voice', speakerDescription: 'demo voice', consent: true },
+      )
+
+      expect(created).toMatchObject({ id: 'my_voice', name: 'my_voice' })
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('http://localhost:8092/v1/audio/voices')
+      expect(init.method).toBe('POST')
+      expect(new Headers(init.headers).get('Authorization')).toBeNull()
+
+      const form = init.body as FormData
+      const entries: Record<string, unknown> = {}
+      form.forEach((value, key) => {
+        entries[key] = value
+      })
+      expect(entries.audio_sample).toBe(file)
+      expect(entries.consent).toBe('true')
+      expect(entries.name).toBe('my_voice')
+      expect(entries.speaker_description).toBe('demo voice')
+    })
+
+    it('defaults name from the file name and sends consent false', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}))
+
+      const file = new File(['audio-bytes'], 'speaker_a.wav', { type: 'audio/wav' })
+      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        { file, consent: false },
+      )
+
+      expect(created.id).toBe('speaker_a')
+
+      const form = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData
+      expect(form.get('name')).toBe('speaker_a')
+      expect(form.get('consent')).toBe('false')
+    })
+
+    it('deletes with an encoded voice id', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}))
+
+      await providerIndexTtsVllm.extraMethods!.deleteVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        'my voice/中日',
+      )
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe(`http://localhost:8092/v1/audio/voices/${encodeURIComponent('my voice/中日')}`)
+      expect(init.method).toBe('DELETE')
+    })
+  })
+
   describe('extraMethods.listModels', () => {
     it('discovers models from GET /v1/models', async () => {
       fetchMock.mockResolvedValue(jsonResponse({

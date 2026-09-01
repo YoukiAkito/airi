@@ -1,6 +1,6 @@
 import type { CommonRequestOptions } from '@xsai/shared'
 
-import type { ModelInfo, VoiceInfo } from '../../types'
+import type { ModelInfo, ProviderVoiceCreateInput, VoiceInfo } from '../../types'
 
 import { errorMessageFrom } from '@moeru/std'
 import { z } from 'zod'
@@ -205,6 +205,43 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
         throw new Error(`Failed to fetch voices: HTTP ${response.status} ${response.statusText}`)
 
       return parseVoicesPayload(await response.json())
+    },
+    createVoice: async (config, _provider, input: ProviderVoiceCreateInput) => {
+      const baseUrl = resolveBaseUrl(config)
+
+      const form = new FormData()
+      form.append('audio_sample', input.file)
+      form.append('consent', input.consent === false ? 'false' : 'true')
+
+      const fileBaseName = input.file instanceof File ? input.file.name.replace(/\.[^.]+$/, '') : ''
+      const name = input.name?.trim() || fileBaseName || 'voice'
+      form.append('name', name)
+      if (input.speakerDescription?.trim())
+        form.append('speaker_description', input.speakerDescription.trim())
+
+      const response = await fetch(`${baseUrl}audio/voices`, {
+        method: 'POST',
+        body: form,
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to create voice: HTTP ${response.status} ${response.statusText}`)
+      }
+
+      return {
+        id: name,
+        name,
+        provider: 'index-tts-vllm',
+        languages: [{ code: 'zh', title: 'Chinese' }, { code: 'en', title: 'English' }],
+      }
+    },
+    deleteVoice: async (config, _provider, voiceId) => {
+      const baseUrl = resolveBaseUrl(config)
+      const response = await fetch(`${baseUrl}audio/voices/${encodeURIComponent(voiceId)}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to delete voice: HTTP ${response.status} ${response.statusText}`)
+      }
     },
   },
 })
