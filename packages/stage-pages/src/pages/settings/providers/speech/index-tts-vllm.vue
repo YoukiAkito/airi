@@ -127,6 +127,9 @@ async function handleCreateVoice() {
       voiceFile.value = undefined
       voiceName.value = ''
       consent.value = false
+      // Refresh the voice list so a freshly uploaded voice becomes selectable —
+      // and, with it, the configured mark (see the configured-marking section).
+      speechStore.loadVoicesForProvider(providerId, model.value)
     }
   }
   catch (error) {
@@ -165,6 +168,25 @@ async function handleDeleteVoice(voiceId: string) {
 function handleRefreshVoices() {
   speechStore.loadVoicesForProvider(providerId, model.value)
 }
+
+// ------------------------------------------------------------------
+// Configured marking — surface in the speech ProviderPicker
+// ------------------------------------------------------------------
+// SpeechProviderSettings persists config values but never runs validation,
+// so the provider would stay 'unconfigured' and be filtered out of module
+// pages. Mirror the generic edit page's validate-and-mark flow: once the
+// server answers (models discovered) and voices are selectable, mark the
+// provider configured. If the endpoint later becomes unreachable, unmark
+// it again so it leaves the picker until it is reachable again.
+const apiHealthy = computed(() => providerModels.value.length > 0)
+const voiceSelectable = computed(() => availableVoices.value.length > 0)
+
+watch([apiHealthy, voiceSelectable], ([healthy, voicesReady]) => {
+  if (healthy && voicesReady)
+    providersStore.forceProviderConfigured(providerId)
+  else if (!healthy)
+    providersStore.setProviderUnconfigured(providerId)
+})
 
 // ------------------------------------------------------------------
 // Speech playground — the only surface the user needs: text in, audio out
