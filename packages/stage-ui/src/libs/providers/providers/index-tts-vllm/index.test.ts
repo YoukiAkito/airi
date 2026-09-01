@@ -77,7 +77,26 @@ describe('index-tts-vllm provider definition', () => {
   })
 
   describe('extraMethods.listVoices', () => {
-    it('parses the vLLM-Omni array payload', async () => {
+    it('parses the OpenAI-style data array payload', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({
+        object: 'list',
+        data: [
+          { name: 'demo_boy', path: '/data/voices/demo_boy.wav' },
+          { name: 'demo_girl', path: '/data/voices/demo_girl.wav' },
+        ],
+      }))
+
+      const voices = await providerIndexTtsVllm.extraMethods!.listVoices!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+      )
+
+      expect(voices.map(v => v.id)).toEqual(['demo_boy', 'demo_girl'])
+      expect(voices[0]).toMatchObject({ id: 'demo_boy', provider: 'index-tts-vllm' })
+      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8092/v1/audio/voices')
+    })
+
+    it('parses the legacy voices array payload', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ voices: ['demo_voice', '内置音色'] }))
 
       const voices = await providerIndexTtsVllm.extraMethods!.listVoices!(
@@ -87,7 +106,6 @@ describe('index-tts-vllm provider definition', () => {
 
       expect(voices).toHaveLength(2)
       expect(voices[0]).toMatchObject({ id: 'demo_voice', provider: 'index-tts-vllm' })
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8092/v1/audio/voices')
     })
 
     it('throws on non-ok response', async () => {

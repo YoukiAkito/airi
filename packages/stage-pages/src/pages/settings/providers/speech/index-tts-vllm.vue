@@ -133,6 +133,10 @@ onMounted(async () => {
   textNormalization.value = providers.value[providerId]?.textNormalization as boolean | undefined ?? true
   emoText.value = (providers.value[providerId]?.emoText as string | undefined) || ''
 
+  // Probe the running server on mount so the discovered model chips populate
+  // even when the config was restored from storage (no credential change to
+  // trigger the provider store's own watchers).
+  await providersStore.fetchModelsForProvider(providerId)
   await speechStore.loadVoicesForProvider(providerId, model.value)
 })
 </script>

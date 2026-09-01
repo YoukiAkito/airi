@@ -36,16 +36,39 @@ function voicesUrl(config: IndexTtsConfig) {
 }
 
 /**
- * Parses the vLLM-Omni `/audio/voices` response payload: `{ voices: string[] }`.
+ * Parses the vLLM-Omni `/audio/voices` response payload.
+ *
+ * The vLLM-Omni deployment used for IndexTTS-2.5 returns an OpenAI-style
+ * list object `{ object: 'list', data: [{ name, path, ... }] }`; older
+ * builds returned `{ voices: string[] }`. Both shapes are accepted.
  */
 function parseVoicesPayload(payload: unknown): VoiceInfo[] {
-  if (payload && typeof payload === 'object' && Array.isArray((payload as { voices?: unknown[] }).voices)) {
-    return (payload as { voices: string[] }).voices.map(name => ({
-      id: name,
-      name,
-      provider: 'index-tts-vllm',
-      languages: [{ code: 'zh', title: 'Chinese' }, { code: 'en', title: 'English' }],
-    }))
+  if (payload && typeof payload === 'object') {
+    const obj = payload as { data?: unknown[], voices?: unknown[] }
+
+    if (Array.isArray(obj.data)) {
+      return obj.data
+        .filter((entry): entry is { name: string } => (
+          typeof entry === 'object'
+          && entry !== null
+          && typeof (entry as { name?: unknown }).name === 'string'
+        ))
+        .map(entry => ({
+          id: entry.name,
+          name: entry.name,
+          provider: 'index-tts-vllm',
+          languages: [{ code: 'zh', title: 'Chinese' }, { code: 'en', title: 'English' }],
+        }))
+    }
+
+    if (Array.isArray(obj.voices)) {
+      return (obj.voices as string[]).map(name => ({
+        id: name,
+        name,
+        provider: 'index-tts-vllm',
+        languages: [{ code: 'zh', title: 'Chinese' }, { code: 'en', title: 'English' }],
+      }))
+    }
   }
 
   return []
