@@ -164,6 +164,68 @@ describe('index-tts-vllm provider definition', () => {
       expect(form.get('consent')).toBe('false')
     })
 
+    it('sanitizes a non-ASCII file name to the allowed voice-name charset', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}))
+
+      const file = new File(['audio-bytes'], '训练片段1.wav', { type: 'audio/wav' })
+      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        { file, consent: true },
+      )
+
+      const form = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData
+      const sentName = form.get('name') as string
+      expect(sentName).toMatch(/^[\w-]+$/)
+      expect(sentName).not.toMatch(/[\u4E00-\u9FFF]/)
+      expect(created.id).toBe(sentName)
+      expect(created.name).toBe(sentName)
+    })
+
+    it('falls back to a generated name when sanitizing leaves an empty string', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({}))
+
+      const file = new File(['audio-bytes'], '我的声音.wav', { type: 'audio/wav' })
+      const created = await providerIndexTtsVllm.extraMethods!.createVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        { file, consent: true },
+      )
+
+      const form = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData
+      const sentName = form.get('name') as string
+      expect(sentName).toMatch(/^voice-\d+$/)
+      expect(created.id).toBe(sentName)
+    })
+
+    it('appends the server detail to the error message on a 400 response', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({ detail: 'name must match [A-Za-z0-9_-]+' }, false, 400),
+      )
+
+      const attempt = providerIndexTtsVllm.extraMethods!.createVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        { file: new File(['audio-bytes'], 'voice.wav', { type: 'audio/wav' }), name: 'voice', consent: true },
+      )
+
+      await expect(attempt).rejects.toThrow('Failed to create voice: HTTP 400')
+      await expect(attempt).rejects.toThrow('name must match [A-Za-z0-9_-]+')
+    })
+
+    it('appends the server detail to the error message on delete failure', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ detail: 'voice not found' }, false, 404))
+
+      const attempt = providerIndexTtsVllm.extraMethods!.deleteVoice!(
+        { baseUrl: '', model: 'IndexTeam/IndexTTS-2.5' } as never,
+        null as never,
+        'missing-voice',
+      )
+
+      await expect(attempt).rejects.toThrow('Failed to delete voice: HTTP 404')
+      await expect(attempt).rejects.toThrow('voice not found')
+    })
+
     it('deletes with an encoded voice id', async () => {
       fetchMock.mockResolvedValue(jsonResponse({}))
 

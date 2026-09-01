@@ -93,6 +93,24 @@ function buildExtraParams(config: IndexTtsConfig, providerConfig: Record<string,
   return params
 }
 
+const VOICE_NAME_MAX_LENGTH = 64
+
+/**
+ * Keeps only characters allowed by the vLLM-Omni voice-name regex
+ * `[A-Za-z0-9_-]`, truncating to a sane upper bound. Returns an empty string
+ * when nothing survives the filter (callers fall back to a generated name).
+ */
+function sanitizeVoiceName(candidate: string): string {
+  return candidate.replace(/[^\w-]/g, '').slice(0, VOICE_NAME_MAX_LENGTH)
+}
+
+/** Reads the `{ detail }` string out of an error response body, if any. */
+async function readErrorDetail(response: Response): Promise<string> {
+  const payload = await response.json().catch(() => null)
+  const detail = (payload as { detail?: unknown } | null)?.detail
+  return typeof detail === 'string' && detail !== '' ? detail : ''
+}
+
 export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
   id: 'index-tts-vllm',
   name: 'Index-TTS by Bilibili',
@@ -201,8 +219,10 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
     },
     listVoices: async (config) => {
       const response = await fetch(voicesUrl(config))
-      if (!response.ok)
-        throw new Error(`Failed to fetch voices: HTTP ${response.status} ${response.statusText}`)
+      if (!response.ok) {
+        const detail = await readErrorDetail(response)
+        throw new Error(`Failed to fetch voices: HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`)
+      }
 
       return parseVoicesPayload(await response.json())
     },
@@ -214,7 +234,7 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
       form.append('consent', input.consent === false ? 'false' : 'true')
 
       const fileBaseName = input.file instanceof File ? input.file.name.replace(/\.[^.]+$/, '') : ''
-      const name = input.name?.trim() || fileBaseName || 'voice'
+      const name = sanitizeVoiceName(input.name?.trim() || fileBaseName) || `voice-${Date.now()}`
       form.append('name', name)
       if (input.speakerDescription?.trim())
         form.append('speaker_description', input.speakerDescription.trim())
@@ -224,7 +244,8 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
         body: form,
       })
       if (!response.ok) {
-        throw new Error(`Failed to create voice: HTTP ${response.status} ${response.statusText}`)
+        const detail = await readErrorDetail(response)
+        throw new Error(`Failed to create voice: HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`)
       }
 
       return {
@@ -240,7 +261,8 @@ export const providerIndexTtsVllm = defineProvider<IndexTtsConfig>({
         method: 'DELETE',
       })
       if (!response.ok) {
-        throw new Error(`Failed to delete voice: HTTP ${response.status} ${response.statusText}`)
+        const detail = await readErrorDetail(response)
+        throw new Error(`Failed to delete voice: HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`)
       }
     },
   },
