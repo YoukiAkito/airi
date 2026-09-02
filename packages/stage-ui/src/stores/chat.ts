@@ -12,7 +12,7 @@ import { createChatOrchestratorRuntime } from '@proj-airi/core-agent'
 import { IOAttributes, IOEvents, IOSpanNames, IOSubsystems } from '@proj-airi/stage-shared'
 import { nanoid } from 'nanoid'
 import { defineStore, storeToRefs } from 'pinia'
-import { shallowRef, toRaw } from 'vue'
+import { shallowRef, toRaw, watch } from 'vue'
 
 import { getConversationAnalyticsSurface } from '../composables'
 import { activeTurnSpan, startSpan } from '../composables/use-io-tracer'
@@ -27,12 +27,14 @@ import { useLLM } from './ai/chat-llm/llm'
 import { resolveLlmTools } from './ai/chat-llm/tool-resolver'
 import { useLlmToolsStore } from './ai/chat-llm/tools'
 import { useLlmToolsetPromptsStore } from './ai/chat-llm/toolset-prompts'
-import { createMinecraftContext } from './chat/context-providers'
+import { useAuthStore } from './auth'
+import { createAlayaMemoryContext, createMinecraftContext, registerAlayaAutoIngestion } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
 import { useChatSessionStore } from './chat/session-store'
 import { useChatStreamStore } from './chat/stream-store'
 import { useContextObservabilityStore } from './devtools/context-observability'
 import { useAiriCardStore } from './modules/airi-card'
+import { useAlayaMemoryStore } from './modules/alaya-memory'
 import { useAutonomousArtistryStore } from './modules/artistry-autonomous'
 import { useConsciousnessStore } from './modules/consciousness'
 import { useWebSearchStore } from './modules/web-search'
@@ -297,6 +299,7 @@ export const useChatStore = defineStore('chat', () => {
     getActiveProvider: () => activeProvider.value,
     getSystemPromptSupplement: () => llmToolsetPromptsStore.activeToolsetPrompt,
     runtimeContextProviders: [
+      createAlayaMemoryContext,
       createMinecraftContext,
     ],
     createId: nanoid,
@@ -346,11 +349,52 @@ export const useChatStore = defineStore('chat', () => {
     },
   })
 
+  // Auto-ingest user messages into Alaya long-term memory after each chat turn,
+  // and record the assistant side in the short-term buffer.
+  registerAlayaAutoIngestion(runtime.hooks.onChatTurnComplete, {
+    resolveSessionId: () => activeSessionId.value,
+  })
+
+  // Pre-connect Alaya on character / user change so the first prompt
+  // after a switch already has IndexedDB data loaded — skips the
+  // "return null first round" gap from the synchronous provider.
+  const alayaMem = useAlayaMemoryStore()
+  const auth = useAuthStore()
+  watch([() => cardStore.activeCardId, () => auth.userId], async ([cid, uid]) => {
+    if (cid && uid)
+      alayaMem.connect({ characterId: cid, userId: uid })
+  }, { immediate: true })
+
+  // Drain Alaya's short-term buffer when the conversation moves to another
+  // session, so the previous session's turns get digested under their own
+  // session tag instead of lingering in the shared per-character buffer.
+  watch(activeSessionId, () => {
+    void alayaMem.compactSessionQuietly()
+  })
+
   async function ingest(
     sendingMessage: string,
     options: ChatOrchestratorSendOptions,
     targetSessionId?: string,
   ) {
+    // Record the user turn in Alaya's short-term buffer. The assistant turn
+    // is recorded by the onChatTurnComplete hook, which has no access to the
+    // target session the caller asked for.
+    try {
+      alayaMem.addTurn({
+        role: 'user',
+        content: sendingMessage,
+        sessionId: targetSessionId ?? activeSessionId.value,
+      })
+    }
+    catch { /* best-effort: memory bookkeeping must never block sending */ }
+
+    // Rank long-term memories against this message before the runtime
+    // assembles its contexts. Providers are synchronous, so the relevance
+    // search has to happen here. Failures are swallowed inside the store
+    // and degrade to recency ordering rather than blocking the send.
+    await alayaMem.prepareContext(sendingMessage)
+
     return runtime.ingest(sendingMessage, options, targetSessionId)
   }
 

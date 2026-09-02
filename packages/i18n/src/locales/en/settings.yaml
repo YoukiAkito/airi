@@ -480,6 +480,27 @@ pages:
   memory:
     description: Where memories got stored, and organized
     title: Memory
+    accessed: Accessed
+    addFirstMemory: Add your first memory
+    addMemory: Add memory
+    cancel: Cancel
+    contentPlaceholder: Write the memory content here...
+    delete: Delete
+    deleteConfirm: Are you sure you want to delete this memory?
+    empty: No memories yet. Add one to get started.
+    from: from
+    lastAccess: Last accessed
+    manageMemories: Manage memories
+    memoryContent: Memory content
+    noCharacter: Select a character to manage memories
+    recentMemories: Recent memories
+    runHousekeeping: Compact
+    save: Save
+    searchPlaceholder: Search memories...
+    tags: Tags
+    tagsPlaceholder: comma, separated, tags
+    times: times
+    totalMemories: total memories
   data:
     title: Data
     description: Manage stored AIRI data, exports, and resets
@@ -1427,8 +1448,44 @@ pages:
       index-tts-vllm:
         description: https://index-tts.github.io/
         title: Bilibili / IndexTTS
-        callout_indextts2_unavailable_title: Limited Support
-        callout_indextts2_unavailable: Support for IndexTTS2 is currently unavailable. Please use IndexTTS.
+        model:
+          label: Model
+          description: Select the IndexTTS model version. IndexTTS-2 / 2.5 use the vLLM-Omni OpenAI-compatible endpoint.
+          discovered_label: 'Discovered models:'
+          base_url_kept_notice: The base URL does not match the selected model version. It was kept as-is — update it if requests fail.
+        model_deprecated_notice: This model version is deprecated. Consider switching to IndexTeam/IndexTTS-2.5.
+        voice:
+          upload:
+            title: Upload voice
+            description: Upload a reference audio clip and name it to reuse as a voice. Uploaded voices are stored by the local IndexTTS server.
+            file_label: Reference audio
+            file_placeholder: WAV or MP3, a few seconds of clean speech
+            name_label: Voice name
+            name_placeholder: Used as the voice id in requests (e.g. my_voice)
+            speaker_description_label: Speaker description
+            speaker_description_placeholder: Optional short description of the speaker
+            consent_label: I confirm I have the right to use this audio
+            consent_description: Required by the IndexTTS voice storage API
+            submit: Upload voice
+            submitting: Uploading...
+            success: Voice uploaded successfully
+            error: 'Failed to upload voice:'
+          list:
+            title: Saved voices
+            empty: No voices saved yet. Upload a reference audio above.
+            delete: Delete
+            delete_confirm: Delete this voice from the local IndexTTS server?
+            delete_success: Voice deleted
+            refresh: Refresh
+        lang:
+          label: Language
+          description: Synthesis language. 'zhen' enables Chinese-English mixed text normalization.
+        text_normalization:
+          label: Text normalization
+          description: Normalize numbers, dates and units before synthesis.
+        emo_text:
+          label: Emotion description
+          description: Optional natural-language emotion control, e.g. 开心、兴奋而且充满活力.
       azure-ai-foundry:
         description: Azure AI Foundry
         title: Azure AI Foundry

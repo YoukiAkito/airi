@@ -460,6 +460,27 @@ pages:
   memory:
     description: 存放记忆的地方，以及策略
     title: 记忆体
+    accessed: 已访问
+    addFirstMemory: 添加第一条记忆
+    addMemory: 添加记忆
+    cancel: 取消
+    contentPlaceholder: 在这里编写记忆内容...
+    delete: 删除
+    deleteConfirm: 确定要删除这条记忆吗？
+    empty: 还没有记忆记录。点击上方的添加按钮开始吧。
+    from: 起始于
+    lastAccess: 最后访问
+    manageMemories: 管理记忆
+    memoryContent: 记忆内容
+    noCharacter: 请先选择一个角色
+    recentMemories: 最近记忆
+    runHousekeeping: 整理压缩
+    save: 保存
+    searchPlaceholder: 搜索记忆...
+    tags: 标签
+    tagsPlaceholder: 用逗号分隔标签
+    times: 次
+    totalMemories: 条记忆
   data:
     title: Data
     description: 管理存储 AIRI 数据、导出和重置
@@ -1352,8 +1373,44 @@ pages:
       index-tts-vllm:
         description: https://index-tts.github.io/
         title: Bilibili / IndexTTS
-        callout_indextts2_unavailable_title: 暂不支持
-        callout_indextts2_unavailable: 目前尚未支持 IndexTTS2，请使用 IndexTTS。
+        model:
+          label: 模型
+          description: 选择 IndexTTS 模型版本。IndexTTS-2 / 2.5 使用 vLLM-Omni 的 OpenAI 兼容端点。
+          discovered_label: '已发现的模型：'
+          base_url_kept_notice: 当前 Base URL 与所选模型版本不匹配，已保留原值；如请求失败请手动更新。
+        model_deprecated_notice: 该模型版本已弃用，建议切换到 IndexTeam/IndexTTS-2.5。
+        voice:
+          upload:
+            title: 上传音色
+            description: 上传一段参考音频并命名，之后可按名字复用该音色。上传的音色由本地 IndexTTS 服务存储。
+            file_label: 参考音频
+            file_placeholder: WAV 或 MP3，数秒清晰的语音
+            name_label: 音色名称
+            name_placeholder: 用作请求中的 voice id（如 my_voice）
+            speaker_description_label: 音色描述
+            speaker_description_placeholder: 可选，简短描述该说话人
+            consent_label: 我确认我有权使用这段音频
+            consent_description: IndexTTS 音色存储 API 要求
+            submit: 上传音色
+            submitting: 上传中...
+            success: 音色上传成功
+            error: 音色上传失败：
+          list:
+            title: 已保存的音色
+            empty: 还没有保存的音色，请在上方上传参考音频。
+            delete: 删除
+            delete_confirm: 从本地 IndexTTS 服务删除该音色？
+            delete_success: 音色已删除
+            refresh: 刷新
+        lang:
+          label: 语言
+          description: 合成语言，zhen 为中英混合文本归一化模式。
+        text_normalization:
+          label: 文本归一化
+          description: 合成前归一化数字、日期与单位。
+        emo_text:
+          label: 情感描述
+          description: 可选的自然语言情感控制，例如「开心、兴奋而且充满活力」。
       azure-ai-foundry:
         description: Azure AI Foundry
         title: Azure AI Foundry
